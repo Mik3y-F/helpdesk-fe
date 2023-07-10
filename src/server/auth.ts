@@ -4,8 +4,8 @@ import {
   type NextAuthOptions,
   type DefaultSession,
 } from "next-auth";
-import DiscordProvider from "next-auth/providers/discord";
-import { env } from "@/env.mjs";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { createJWT, getUser } from "@/lib/auth";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -17,15 +17,22 @@ declare module "next-auth" {
   interface Session extends DefaultSession {
     user: {
       id: string;
-      // ...other properties
-      // role: UserRole;
+      accessToken: string;
+      refreshToken: string;
     } & DefaultSession["user"];
   }
 
-  // interface User {
-  //   // ...other properties
-  //   // role: UserRole;
-  // }
+  interface User {
+    accessToken: string;
+    refreshToken: string;
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    accessToken: string;
+    refreshToken: string;
+  }
 }
 
 /**
@@ -40,13 +47,44 @@ export const authOptions: NextAuthOptions = {
       user: {
         ...session.user,
         id: token.sub,
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
       },
     }),
+    jwt: ({ token, user }) => {
+      if (user) {
+        token.accessToken = user.accessToken;
+        token.refreshToken = user.refreshToken;
+      }
+      return token;
+    },
   },
   providers: [
-    DiscordProvider({
-      clientId: env.DISCORD_CLIENT_ID,
-      clientSecret: env.DISCORD_CLIENT_SECRET,
+    CredentialsProvider({
+      id: "login",
+      credentials: {
+        email: {
+          label: "Email",
+          type: "text",
+          placeholder: "john.doe@email.com",
+        },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const email = credentials?.["email"];
+        const password = credentials?.["password"];
+
+        if (email && password) {
+          try {
+            const jwtRes = await createJWT(email, password);
+            return getUser(jwtRes);
+          } catch (e) {
+            throw new Error("Unexpected auth error");
+          }
+        } else {
+          throw new Error("Email and Password are required");
+        }
+      },
     }),
     /**
      * ...add more providers here.
@@ -58,6 +96,12 @@ export const authOptions: NextAuthOptions = {
      * @see https://next-auth.js.org/providers/github
      */
   ],
+  pages: {
+    signIn: "/",
+  },
+  session: {
+    strategy: "jwt",
+  },
 };
 
 /**

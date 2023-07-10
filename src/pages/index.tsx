@@ -19,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 const formSchema = z.object({
   email: z.string().email(),
@@ -26,6 +27,8 @@ const formSchema = z.object({
 });
 
 export default function Home() {
+  const { data: session, status } = useSession();
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -35,8 +38,13 @@ export default function Home() {
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    // Do something with the form values.
-    // ✅ This will be type-safe and validated.
+    signIn("login", {
+      email: values.email,
+      password: values.password,
+      callbackUrl: "/dashboard",
+    })
+      .then((res) => console.log(res))
+      .catch((err) => console.log(err));
     console.log(values);
   }
   return (
@@ -100,6 +108,22 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        {status === "authenticated" && (
+          <div>
+            <p>Signed in as {session.user.email}</p>
+            <Button
+              size={"lg"}
+              onClick={() => {
+                signOut()
+                  .then((res) => console.log(res))
+                  .catch((err) => console.log(err));
+              }}
+            >
+              Logout
+            </Button>
+          </div>
+        )}
       </div>
     </>
   );
